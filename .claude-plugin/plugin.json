@@ -1,0 +1,11 @@
+{
+  "name": "mod-store",
+  "version": "0.1.0",
+  "description": "/mods: browse, search and install community Claude Code mods from a pane, with what each one can access shown before you install",
+  "author": { "name": "hellosverre", "url": "https://github.com/hellosverre" },
+  "homepage": "https://github.com/hellosverre/mod-store",
+  "repository": "https://github.com/hellosverre/mod-store",
+  "license": "MIT",
+  "keywords": ["mods", "store", "catalog", "plugins", "pane"],
+  "types": "./types/index.d.ts"
+}

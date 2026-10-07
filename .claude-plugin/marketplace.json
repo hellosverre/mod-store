@@ -1,0 +1,14 @@
+{
+  "name": "mod-store",
+  "owner": { "name": "hellosverre", "url": "https://github.com/hellosverre" },
+  "plugins": [
+    {
+      "name": "mod-store",
+      "source": "./",
+      "description": "/mods: browse, search and install 2,700 community Claude Code mods from a pane, and let Claude find them for you",
+      "category": "productivity",
+      "tags": ["mods", "store", "catalog", "install", "pane", "mod"]
+    }
+  ],
+  "metadata": { "description": "An in-app store for Claude Code mods" }
+}
