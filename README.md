@@ -41,6 +41,12 @@ claude plugin validate .
 claude plugin test .
 ```
 
+## More mods
+
+- [skins](https://github.com/hellosverre/claude-skins): tool rows with icons, diff and chart cards, fifteen themes
+- [redgreen](https://github.com/hellosverre/redgreen): test results in a pane beside the chat
+- [smart-compact](https://github.com/hellosverre/smart-compact): compacts after a commit, green tests, before the prompt cache expires, or when Claude asks
+
 ## License
 
 MIT
