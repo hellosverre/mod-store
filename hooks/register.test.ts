@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { select, slim } from './register'
+import { fetchCatalogText, noLabels, select, slim } from './register'
 
 const record = (over: Record<string, unknown> = {}) => ({
   id: 'a/b:x',
@@ -29,7 +29,7 @@ describe('slim', () => {
     expect(slim(record())?.marketplace).toBe('b')
     const nested = record({ marketplaces: [{ path: 'x/.claude-plugin/marketplace.json', name: 'n', status: 'passed' }] })
     expect(slim(nested)?.marketplace).toBeNull()
-    expect(slim(record())?.labels).toEqual(['draws'])
+    expect(slim(record())?.labels).toEqual(['draws', 'also uses $.state.get'])
   })
 })
 
@@ -55,5 +55,52 @@ describe('select', () => {
     const big = ['b1', 'b2', 'b3'].map(n => slim(record({ id: n, name: n, repo: 'big/r', stars: 900 }))!)
     const small = slim(record({ id: 's', name: 's', repo: 'small/r', stars: 4 }))!
     expect(select([...big, small], '', 'all', 'stars').map(m => m.name)).toEqual(['b1', 's', 'b2', 'b3'])
+  })
+})
+
+describe('access labels', () => {
+  test('an ungraded API stays in the labels, so a spawner never reads as draw only', async () => {
+    const spawner = slim(record({ reach: { level: 0, name: 'draws', labels: ['draws', 'other: $.process.spawn'] } }))!
+    expect(spawner.labels).toEqual(['draws', 'also uses $.process.spawn'])
+    expect(spawner.labels.join(', ')).not.toBe('draw only')
+  })
+
+  test('only a display-only mod with no labels is called draw only', async () => {
+    const quiet = slim(record({ reach: { level: 0, name: 'draws', labels: [] } }))!
+    const runner = slim(record({ reach: { level: 2, name: 'runs', labels: [] } }))!
+    expect(noLabels(quiet)).toBe('draw only')
+    expect(noLabels(runner)).toBe('writes & runs (the catalogue lists no details)')
+  })
+})
+
+describe('fetchCatalogText', () => {
+  // A host that decodes each range on its own, the way $.http.fetch does.
+  const host = (body: string, chunk: number) => {
+    const bytes = new TextEncoder().encode(body)
+    return {
+      http: {
+        fetch: async (_url: string, init: { headers: Record<string, string> }) => {
+          const [from, to] = /bytes=(\d+)-(\d+)/.exec(init.headers.Range)!.slice(1).map(Number) as [number, number]
+          const slice = bytes.slice(from, Math.min(to + 1, from + chunk))
+          return {
+            status: 206,
+            ok: true,
+            headers: { 'content-range': `bytes ${from}-${from + slice.length - 1}/${bytes.length}` },
+            text: new TextDecoder().decode(slice),
+          }
+        },
+      },
+    } as any
+  }
+
+  test('a character split across two ranges comes through whole', async () => {
+    // 2,000,000 bytes per range: put a 3-byte and a 4-byte character across the boundary.
+    const body = `${'a'.repeat(1_999_999)}č${'b'.repeat(1_999_998)}é漢😀 end`
+    expect(await fetchCatalogText(host(body, 2_000_000))).toBe(body)
+  })
+
+  test('a body that splits nothing comes through as is', async () => {
+    const body = JSON.stringify({ mods: [{ name: 'x', description: '한국어 설명' }] })
+    expect(await fetchCatalogText(host(body, 2_000_000))).toBe(body)
   })
 })

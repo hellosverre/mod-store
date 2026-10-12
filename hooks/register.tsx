@@ -5,7 +5,8 @@ import type { Filter, Mod, Sort } from '../types'
 
 const PANE = 'mod-store'
 const CATALOG_URL = 'https://mods.aidojo.si/mods.json'
-const CACHE_KEY = 'catalog-v1'
+// v2: v1 copies dropped the catalogue's `other:` access labels.
+const CACHE_KEY = 'catalog-v2'
 const MAX_AGE_MS = 6 * 60 * 60 * 1000
 /** The host cuts long bodies short, so the 7.5 MB catalogue comes in ranges. */
 const CHUNK_BYTES = 2_000_000
@@ -60,6 +61,13 @@ const PLACES: Record<string, string> = {
 /** The catalogue, slimmed. A module variable: rebuilt from the store on reload. */
 let catalog: Mod[] = []
 
+/**
+ * The catalogue files APIs it has no grade for under `other: $.api`. They are kept,
+ * reworded, so a mod that spawns processes never reads as "draw only".
+ */
+export const accessLabel = (label: string): string =>
+  label.startsWith('other:') ? `also uses ${label.slice('other:'.length).trim()}` : label
+
 /** Turns one catalogue record into the fields the pane draws. */
 export function slim(record: any): Mod | null {
   if (record?.kind !== 'mod' || record.archived) return null
@@ -77,7 +85,7 @@ export function slim(record: any): Mod | null {
     createdAt: String(record.createdAt ?? ''),
     level: Number(record.reach?.level ?? 2),
     levelName: String(record.reach?.name ?? 'unknown'),
-    labels: (record.reach?.labels ?? []).filter((l: string) => !l.startsWith('other:')),
+    labels: (record.reach?.labels ?? []).map(accessLabel),
     sees: record.sees ?? [],
     draws: record.draws ?? [],
     validate: String(record.validate?.status ?? 'unknown'),
@@ -119,15 +127,35 @@ const pluginId = (mod: Mod) => `${mod.name}@${mod.marketplace}`
 
 const level = (mod: Mod) => LEVELS[mod.level] ?? LEVELS[2]!
 
+/** What the confirmation says when the catalogue lists no access. Only a display-only mod is "draw only". */
+export const noLabels = (mod: Mod): string =>
+  mod.level === 0 ? 'draw only' : `${(LEVELS[mod.level] ?? LEVELS[2]!).badge.toLowerCase()} (the catalogue lists no details)`
+
 const plural = (n: number, word: string) => `${n.toLocaleString('en-US')} ${word}${n === 1 ? '' : 's'}`
 
 const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text)
 
-/** Reads the whole catalogue a range at a time, since one body is cut short. */
-async function fetchCatalogText($: EngineInterface): Promise<string> {
+/** UTF-8 bytes `text` takes. */
+const utf8Bytes = (text: string): number => {
+  let n = 0
+  for (const char of text) {
+    const code = char.codePointAt(0)!
+    n += code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4
+  }
+  return n
+}
+
+/**
+ * Reads the whole catalogue a range at a time, since one body is cut short. The host
+ * decodes each range on its own, so a character split across two ranges comes back as
+ * U+FFFD at the end of the first. That tail is dropped and the next range starts at the
+ * first byte not yet read whole.
+ */
+export async function fetchCatalogText($: Pick<EngineInterface, 'http'>): Promise<string> {
   let text = ''
   let total = Infinity
-  for (let start = 0; start < total; start += CHUNK_BYTES) {
+  let start = 0
+  while (start < total) {
     const res = await $.http.fetch(CATALOG_URL, {
       headers: { Range: `bytes=${start}-${start + CHUNK_BYTES - 1}`, 'Accept-Encoding': 'identity' },
     })
@@ -136,7 +164,11 @@ async function fetchCatalogText($: EngineInterface): Promise<string> {
     const size = /\/(\d+)\s*$/.exec(res.headers['content-range'] ?? '')
     if (!size) throw new Error('the server sent no Content-Range')
     total = Number(size[1])
-    text += res.text
+    const isLast = start + CHUNK_BYTES >= total
+    const whole = isLast ? res.text : res.text.replace(/�+$/, '')
+    if (whole === '') throw new Error(`no readable text at byte ${start}`)
+    text += whole
+    start += isLast ? CHUNK_BYTES : utf8Bytes(whole)
   }
   return text
 }
@@ -369,7 +401,7 @@ export const register: Register = on => {
                 Runs: claude plugin install {picked.name} --marketplace {picked.repo}
               </Text>
               <Text wrap="wrap">
-                It will be able to: <Text color={tier.color}>{picked.labels.join(', ') || 'draw only'}</Text>
+                It will be able to: <Text color={tier.color}>{picked.labels.join(', ') || noLabels(picked)}</Text>
               </Text>
             </Box>
           )}
@@ -387,7 +419,7 @@ export const register: Register = on => {
                 ● {tier.badge}
               </Text>
             </Box>
-            {picked.labels.length === 0 && <Text dimColor>Nothing beyond drawing.</Text>}
+            {picked.labels.length === 0 && <Text dimColor>{picked.level === 0 ? 'Nothing beyond drawing.' : `${tier.badge}: the catalogue lists no details.`}</Text>}
             {picked.labels.map(label => (
               <Text key={`can-${label}`} dimColor>
                 {'  '}• {label}
