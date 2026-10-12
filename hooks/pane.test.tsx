@@ -10,7 +10,7 @@ const mod = slim({
 
 test('clicking a mod opens its page', async ($, on) => {
   mock.clock(on, { now: 1000 })
-  mock.store(on, { 'catalog-v1': { at: 1000, mods: [mod] } })
+  mock.store(on, { 'catalog-v2': { at: 1000, mods: [mod] } })
   on('ui.open', async () => ({ value: { isOpen: true } }) as any)
   on('process.run', async () => ({ value: { exitCode: 0, stdout: '[]', stderr: '' } }) as any)
   await $.command.run({ command: 'mods', args: '' } as any)
@@ -25,7 +25,7 @@ test('clicking a mod opens its page', async ($, on) => {
 
 test('Claude can search the catalogue and open a mod', async ($, on) => {
   mock.clock(on, { now: 1000 })
-  mock.store(on, { 'catalog-v1': { at: 1000, mods: [mod] } })
+  mock.store(on, { 'catalog-v2': { at: 1000, mods: [mod] } })
   on('ui.open', async () => ({ value: { isOpen: true } }) as any)
   on('process.run', async () => ({ value: { exitCode: 0, stdout: '[]', stderr: '' } }) as any)
   await $.classic.SessionStart({ source: 'startup' } as any).catch(() => {})
